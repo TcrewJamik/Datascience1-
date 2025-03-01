@@ -51,10 +51,8 @@ data.drop('class', axis=1, inplace=True)
 
 categorical_cols = data.select_dtypes(include=['object']).columns
 for col in categorical_cols:
-    mode_value = data[col].mode()[0]
-    data[col].fillna(mode_value, inplace=True)
-median_formability = data['formability'].median()
-data['formability'].fillna(median_formability, inplace=True)
+    data[col].fillna(data[col].mode()[0], inplace=True)
+data['formability'].fillna(data['formability'].median(), inplace=True)
 
 if 'label_encoders' not in st.session_state:
     st.session_state['label_encoders'] = {}
@@ -99,16 +97,13 @@ with st.sidebar:
         hyperparams['min_samples_split'] = st.slider("min_samples_split", 2, 20, 2, 1)
         hyperparams['min_samples_leaf'] = st.slider("min_samples_leaf", 1, 10, 1, 1)
         hyperparams['max_features'] = st.selectbox("max_features", ['auto', 'sqrt', 'log2', None], 3)
-
     st.markdown("---")
     st.header("📊 Выбор признаков")
     available_features = X_train.columns.tolist()
     default_features = ['formability', 'condition'] if all(f in available_features for f in ['formability', 'surface-quality', 'shape', 'steel', 'thick', 'width', 'len']) else available_features[:min(2, len(available_features))]
     selected_features = st.multiselect("Выберите признаки для обучения:", available_features, default=default_features)
-    retrain_button = st.button("Предсказать")
-
     st.markdown("---")
-    st.header("Предсказание")
+    st.header("Настройка значений для предсказания")
     prediction_data = {}
     if selected_features:
         for feature in selected_features:
@@ -118,17 +113,11 @@ with st.sidebar:
                 default_val = float(X_train[feature].mean())
                 prediction_data[feature] = st.slider(feature, min_val, max_val, default_val)
             elif feature in categorical_cols:
-                unique_categories = data_original[feature].dropna().unique()
-                if len(unique_categories) > 0:
-                    prediction_data[feature] = st.selectbox(feature, options=unique_categories, index=0)
-                else:
-                    prediction_data[feature] = st.text_input(feature)
+                allowed = st.session_state['label_encoders'][feature].classes_
+                prediction_data[feature] = st.selectbox(feature, options=allowed, index=0)
             else:
                 prediction_data[feature] = st.text_input(feature)
-        predict_single_button = st.button("Предсказать класс")
-    else:
-        st.sidebar.warning("Выберите признаки для предсказания.")
-        predict_single_button = False
+    run_button = st.button("Предсказать")
 
 expander_data_explore = st.expander("Исследование данных", expanded=False)
 with expander_data_explore:
@@ -162,7 +151,7 @@ with expander_data_explore:
                 ax_hist.set_title(col, fontsize=10)
                 st.pyplot(fig_hist, use_container_width=True)
 
-if retrain_button or not st.session_state.get('models_trained', False):
+if run_button or not st.session_state.get('models_trained', False):
     st.session_state['models_trained'] = True
     if len(selected_features) < 2:
         st.warning("Выберите как минимум два признака для обучения моделей.")
@@ -228,7 +217,7 @@ if st.session_state.get('models_trained', False):
     results_df['Вероятность класса 1'] = st.session_state['y_prob']
     st.dataframe(results_df)
 
-if predict_single_button and st.session_state.get('models_trained', False) and prediction_data:
+if run_button and st.session_state.get('models_trained', False) and prediction_data:
     single_prediction_df = pd.DataFrame([prediction_data])
     single_prediction_df = single_prediction_df[st.session_state['selected_features']].copy()
     for col in single_prediction_df.columns:
