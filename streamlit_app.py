@@ -134,7 +134,11 @@ with st.sidebar:
             elif feature in categorical_cols:
                 unique_categories = data_original[feature].dropna().unique()
                 if len(unique_categories) > 0:
-                    prediction_data[feature] = st.sidebar.selectbox(f"Выберите значение для {feature}:", options=unique_categories)
+                    prediction_data[feature] = st.sidebar.selectbox(
+                        f"Выберите значение для {feature}:",
+                        options=unique_categories,
+                        index=0 # Добавим index=0, чтобы по умолчанию выбиралась первая категория
+                    )
                 else:
                     prediction_data[feature] = st.sidebar.text_input(f"Введите значение для {feature}:")
             else:
@@ -221,6 +225,17 @@ if retrain_button or not st.session_state.get('models_trained', False):
     st.session_state['model_choice'] = model_choice
     st.session_state['hyperparams'] = hyperparams
     st.session_state['selected_features'] = selected_features
+    st.session_state['label_encoders'] = {} # Словарь для хранения LabelEncoder для каждого категориального признака
+
+
+# Сохраняем LabelEncoder для каждого категориального столбца
+if not st.session_state.get('label_encoders'): # Проверяем, существует ли уже
+    label_encoders_dict = {}
+    for col in categorical_cols:
+        le = LabelEncoder()
+        le.fit(data_original[col].dropna().astype(str)) # Обучаем на *исходных* данных, чтобы учесть все возможные категории
+        label_encoders_dict[col] = le
+    st.session_state['label_encoders'] = label_encoders_dict
 
 
 # Отображение результатов моделей
@@ -275,16 +290,25 @@ if st.session_state.get('models_trained', False):
 # Логика для единичного предсказания
 if predict_single_button and st.session_state.get('models_trained', False) and prediction_data:
     single_prediction_df = pd.DataFrame([prediction_data])
-    single_prediction_df = single_prediction_df[st.session_state['selected_features']].copy() # Важно использовать .copy() чтобы избежать SettingWithCopyWarning
+    single_prediction_df = single_prediction_df[st.session_state['selected_features']].copy()
 
     # Предобработка единичного образца
     for col in single_prediction_df.columns:
         if col in categorical_cols:
             single_prediction_df[col] = single_prediction_df[col].astype(str)
-            single_prediction_df[col] = label_encoder.transform(single_prediction_df[[col]]) # Кодируем категориальные
+            # Use the correct LabelEncoder from session_state
+            le = st.session_state['label_encoders'][col]
+            # Проверка на "невидимые" категории и обработка
+            for val in single_prediction_df[col]:
+                if val not in list(le.classes_): # Check if the value is in the encoder's classes
+                    st.warning(f"Категория '{val}' для признака '{col}' не была видна во время обучения. "
+                               f"Выберите одно из: {', '.join(list(le.classes_))}")
+                    st.stop() # Останавливаем выполнение, если категория невалидна
+            single_prediction_df[col] = le.transform(single_prediction_df[[col]])
+
     # Масштабируем численные признаки после кодирования категориальных, применяем к DataFrame целиком
-    numerical_cols_selected = [col for col in st.session_state['selected_features'] if col in numerical_cols] # Выбираем только численные признаки из selected_features
-    if numerical_cols_selected: # Проверяем, есть ли численные признаки для масштабирования
+    numerical_cols_selected = [col for col in st.session_state['selected_features'] if col in numerical_cols]
+    if numerical_cols_selected:
         single_prediction_df[numerical_cols_selected] = scaler.transform(single_prediction_df[numerical_cols_selected])
 
 
