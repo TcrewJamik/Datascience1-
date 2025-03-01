@@ -50,13 +50,14 @@ else:
 data.drop('class', axis=1, inplace=True)
 
 categorical_cols = data.select_dtypes(include=['object']).columns
+orig_categorical_cols = list(categorical_cols)
 for col in categorical_cols:
     data[col].fillna(data[col].mode()[0], inplace=True)
 data['formability'].fillna(data['formability'].median(), inplace=True)
 
 if 'label_encoders' not in st.session_state:
     st.session_state['label_encoders'] = {}
-for col in categorical_cols:
+for col in orig_categorical_cols:
     le = LabelEncoder()
     data[col] = le.fit_transform(data[col].astype(str))
     st.session_state['label_encoders'][col] = le
@@ -66,7 +67,7 @@ y = data['binary_class']
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
 scaler = StandardScaler()
-numerical_cols = X_train.columns
+numerical_cols = X_train.columns.tolist()
 X_train[numerical_cols] = scaler.fit_transform(X_train[numerical_cols])
 X_test[numerical_cols] = scaler.transform(X_test[numerical_cols])
 
@@ -107,16 +108,14 @@ with st.sidebar:
     prediction_data = {}
     if selected_features:
         for feature in selected_features:
-            if feature in numerical_cols:
+            if feature in orig_categorical_cols:
+                allowed = st.session_state['label_encoders'][feature].classes_
+                prediction_data[feature] = st.selectbox(feature, options=allowed, index=0)
+            else:
                 min_val = float(X_train[feature].min())
                 max_val = float(X_train[feature].max())
                 default_val = float(X_train[feature].mean())
                 prediction_data[feature] = st.slider(feature, min_val, max_val, default_val)
-            elif feature in categorical_cols:
-                allowed = st.session_state['label_encoders'][feature].classes_
-                prediction_data[feature] = st.selectbox(feature, options=allowed, index=0)
-            else:
-                prediction_data[feature] = st.text_input(feature)
     run_button = st.button("Предсказать")
 
 expander_data_explore = st.expander("Исследование данных", expanded=False)
@@ -221,7 +220,7 @@ if run_button and st.session_state.get('models_trained', False) and prediction_d
     single_prediction_df = pd.DataFrame([prediction_data])
     single_prediction_df = single_prediction_df[st.session_state['selected_features']].copy()
     for col in single_prediction_df.columns:
-        if col in categorical_cols:
+        if col in orig_categorical_cols:
             single_prediction_df[col] = single_prediction_df[col].astype(str)
             le = st.session_state['label_encoders'][col]
             for val in single_prediction_df[col]:
@@ -229,7 +228,7 @@ if run_button and st.session_state.get('models_trained', False) and prediction_d
                     st.warning(f"Категория '{val}' для '{col}' не была видна. Выберите из {', '.join(le.classes_)}")
                     st.stop()
             single_prediction_df[col] = le.transform(single_prediction_df[col])
-    numerical_cols_selected = [c for c in st.session_state['selected_features'] if c in numerical_cols]
+    numerical_cols_selected = [c for c in st.session_state['selected_features'] if c not in orig_categorical_cols]
     if numerical_cols_selected:
         single_prediction_df[numerical_cols_selected] = scaler.transform(single_prediction_df[numerical_cols_selected])
     single_prediction = st.session_state['classifier'].predict(single_prediction_df)
