@@ -117,14 +117,14 @@ with st.sidebar:
     retrain_button = st.button("🔥 Предсказать")
 
     st.markdown("---")
-    st.header("🔮 Единичное предсказание")
+    st.header("Предсказание")
     prediction_data = {}
     if selected_features:
         for feature in selected_features:
             if feature in numerical_cols:
                 min_val = float(X_train[feature].min())
                 max_val = float(X_train[feature].max())
-                default_val = float(X_train[feature].mean())  # Можно выбрать другое значение по умолчанию
+                default_val = float(X_train[feature].mean()) 
                 prediction_data[feature] = st.sidebar.slider(
                     f"Выберите значение для {feature}:",
                     min_value=min_val,
@@ -137,21 +137,21 @@ with st.sidebar:
                     prediction_data[feature] = st.sidebar.selectbox(
                         f"Выберите значение для {feature}:",
                         options=unique_categories,
-                        index=0 # Добавим index=0, чтобы по умолчанию выбиралась первая категория
+                        index=0 
                     )
                 else:
                     prediction_data[feature] = st.sidebar.text_input(f"Введите значение для {feature}:")
             else:
                 prediction_data[feature] = st.sidebar.text_input(f"Введите значение для {feature}:")
 
-        predict_single_button = st.sidebar.button("✨ Предсказать класс")
+        predict_single_button = st.sidebar.button("Предсказать класс")
     else:
         st.sidebar.warning("Выберите признаки для предсказания.")
         predict_single_button = False
 
 
 # Иследование данных
-expander_data_explore = st.expander("🔍 Исследование данных", expanded=False)
+expander_data_explore = st.expander("Исследование данных", expanded=False)
 with expander_data_explore:
     st.subheader("Предварительный просмотр данных")
     st.dataframe(data_original.head())
@@ -205,7 +205,7 @@ if retrain_button or not st.session_state.get('models_trained', False):
     if model_choice == "KNN":
         classifier = KNeighborsClassifier(**hyperparams)
     elif model_choice == "Logistic Regression":
-        classifier = LogisticRegression(max_iter=1000, random_state=42, class_weight='balanced', **hyperparams) # Increased max_iter
+        classifier = LogisticRegression(max_iter=1000, random_state=42, class_weight='balanced', **hyperparams) 
     elif model_choice == "Decision Tree":
         classifier = DecisionTreeClassifier(random_state=42, **hyperparams)
     else:
@@ -225,15 +225,15 @@ if retrain_button or not st.session_state.get('models_trained', False):
     st.session_state['model_choice'] = model_choice
     st.session_state['hyperparams'] = hyperparams
     st.session_state['selected_features'] = selected_features
-    st.session_state['label_encoders'] = {} # Словарь для хранения LabelEncoder для каждого категориального признака
+    st.session_state['label_encoders'] = {} 
 
 
 # Сохраняем LabelEncoder для каждого категориального столбца
-if not st.session_state.get('label_encoders'): # Проверяем, существует ли уже
+if not st.session_state.get('label_encoders'): 
     label_encoders_dict = {}
     for col in categorical_cols:
         le = LabelEncoder()
-        le.fit(data_original[col].dropna().astype(str)) # Обучаем на *исходных* данных, чтобы учесть все возможные категории
+        le.fit(data_original[col].dropna().astype(str)) 
         label_encoders_dict[col] = le
     st.session_state['label_encoders'] = label_encoders_dict
 
@@ -287,26 +287,21 @@ if st.session_state.get('models_trained', False):
     st.dataframe(results_df)
 
 
-# Логика для единичного предсказания
 if predict_single_button and st.session_state.get('models_trained', False) and prediction_data:
     single_prediction_df = pd.DataFrame([prediction_data])
     single_prediction_df = single_prediction_df[st.session_state['selected_features']].copy()
 
-    # Предобработка единичного образца
+    # Предобработка 
     for col in single_prediction_df.columns:
         if col in categorical_cols:
             single_prediction_df[col] = single_prediction_df[col].astype(str)
-            # Use the correct LabelEncoder from session_state
             le = st.session_state['label_encoders'][col]
-            # Проверка на "невидимые" категории и обработка
             for val in single_prediction_df[col]:
-                if val not in list(le.classes_): # Check if the value is in the encoder's classes
+                if val not in list(le.classes_): 
                     st.warning(f"Категория '{val}' для признака '{col}' не была видна во время обучения. "
                                f"Выберите одно из: {', '.join(list(le.classes_))}")
-                    st.stop() # Останавливаем выполнение, если категория невалидна
+                    st.stop() 
             single_prediction_df[col] = le.transform(single_prediction_df[[col]])
-
-    # Масштабируем численные признаки после кодирования категориальных, применяем к DataFrame целиком
     numerical_cols_selected = [col for col in st.session_state['selected_features'] if col in numerical_cols]
     if numerical_cols_selected:
         single_prediction_df[numerical_cols_selected] = scaler.transform(single_prediction_df[numerical_cols_selected])
@@ -315,7 +310,7 @@ if predict_single_button and st.session_state.get('models_trained', False) and p
     single_prediction = st.session_state['classifier'].predict(single_prediction_df)
     single_prediction_proba = st.session_state['classifier'].predict_proba(single_prediction_df)[:, 1]
 
-    st.subheader("✨ Результат единичного предсказания:")
+    st.subheader("Результат предсказания:")
     st.write(f"Предсказанный класс: **{single_prediction[0]}**")
     st.write(f"Вероятность класса 1: **{single_prediction_proba[0]:.3f}**")
 
