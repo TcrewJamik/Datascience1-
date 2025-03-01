@@ -112,7 +112,7 @@ with st.sidebar:
     st.markdown("---")
     st.header("📊 Выбор признаков")
     available_features = X_train.columns.tolist()
-    default_features = ['formability', 'condition'] if all(f in available_features for f in ['formability', 'condition']) else available_features[:min(2, len(available_features))]
+    default_features = ['formability', 'condition'] if all(f in available_features for f in ['formability', 'surface-quality', 'shape', 'steel', 'thick', 'width', 'len']) else available_features[:min(2, len(available_features))]
     selected_features = st.multiselect("Выберите признаки для обучения:", available_features, default=default_features)
     retrain_button = st.button("Предсказать")
 
