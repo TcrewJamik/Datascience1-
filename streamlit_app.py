@@ -14,32 +14,25 @@ import warnings
 warnings.filterwarnings('ignore')
 
 st.set_page_config(page_title="Anneal DataSet", page_icon="⚙️", layout="wide")
-
 file_path = "anneal.data"
 
 @st.cache_data
 def load_data(file_path):
     data = pd.read_csv(file_path, sep=",", header=None, na_values=["?"])
-    data.columns = [
-        "famiily", "product-type", "steel", "carbon", "hardness", "temper-rolling", "condition", "formability",
-        "strength", "non-ageing", "surface-finish", "surface-quality", "enamelability", "bc", "bf", "bt", "bw/me",
-        "bl", "m", "chrom", "phos", "cbond", "marvi", "exptl", "ferro", "corr", "blue/bright/varn/clean",
-        "lustre", "jurofm", "s", "p", "shape", "thick", "width", "len", "oil", "bore", "packing", "class"
-    ]
+    data.columns = ["famiily", "product-type", "steel", "carbon", "hardness", "temper-rolling", "condition", "formability",
+                    "strength", "non-ageing", "surface-finish", "surface-quality", "enamelability", "bc", "bf", "bt", "bw/me",
+                    "bl", "m", "chrom", "phos", "cbond", "marvi", "exptl", "ferro", "corr", "blue/bright/varn/clean",
+                    "lustre", "jurofm", "s", "p", "shape", "thick", "width", "len", "oil", "bore", "packing", "class"]
     return data
 
 data_original = load_data(file_path)
 data = data_original.copy()
-
-columns_to_drop = [
-    "famiily", "temper-rolling", "non-ageing", "surface-finish", "enamelability", "bc", "bf", "bt", "bl", "m",
-    "chrom", "phos", "cbond", "marvi", "exptl", "ferro", "corr", "blue/bright/varn/clean", "lustre", "jurofm",
-    "s", "p", "oil", "packing", "bw/me"
-]
-data.drop(columns=columns_to_drop, inplace=True)
+cols_to_drop = ["famiily", "temper-rolling", "non-ageing", "surface-finish", "enamelability", "bc", "bf", "bt", "bl", "m",
+                "chrom", "phos", "cbond", "marvi", "exptl", "ferro", "corr", "blue/bright/varn/clean", "lustre", "jurofm",
+                "s", "p", "oil", "packing", "bw/me"]
+data.drop(columns=cols_to_drop, inplace=True)
 data.drop(columns=['carbon', 'hardness', 'strength', 'bore', 'product-type'], inplace=True)
 data.dropna(subset=["class"], inplace=True)
-
 class_counts = data["class"].value_counts()
 if len(data["class"].unique()) > 2:
     median_freq = class_counts.median()
@@ -48,31 +41,24 @@ if len(data["class"].unique()) > 2:
 else:
     data["binary_class"] = data["class"]
 data.drop('class', axis=1, inplace=True)
-
 categorical_cols = data.select_dtypes(include=['object']).columns
 orig_categorical_cols = list(categorical_cols)
 for col in categorical_cols:
     data[col].fillna(data[col].mode()[0], inplace=True)
 data['formability'].fillna(data['formability'].median(), inplace=True)
-
 if 'label_encoders' not in st.session_state:
     st.session_state['label_encoders'] = {}
 for col in orig_categorical_cols:
     le = LabelEncoder()
     data[col] = le.fit_transform(data[col].astype(str))
     st.session_state['label_encoders'][col] = le
-
 X = data.drop('binary_class', axis=1)
 y = data['binary_class']
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-scaler = StandardScaler()
-numerical_cols = X_train.columns.tolist()
-X_train[numerical_cols] = scaler.fit_transform(X_train[numerical_cols])
-X_test[numerical_cols] = scaler.transform(X_test[numerical_cols])
-
+global_scaler = StandardScaler()
+X_train_scaled = pd.DataFrame(global_scaler.fit_transform(X_train), columns=X_train.columns, index=X_train.index)
+X_test_scaled = pd.DataFrame(global_scaler.transform(X_test), columns=X_test.columns, index=X_test.index)
 st.title("⚙️ Anneal DataSet")
-
 with st.sidebar:
     st.header("🛠️ Настройки модели")
     model_choice = st.selectbox("Выберите модель:", ["KNN", "Logistic Regression", "Decision Tree"])
@@ -100,8 +86,8 @@ with st.sidebar:
         hyperparams['max_features'] = st.selectbox("max_features", ['auto', 'sqrt', 'log2', None], 3)
     st.markdown("---")
     st.header("📊 Выбор признаков")
-    available_features = X_train.columns.tolist()
-    default_features = ['formability', 'condition'] if all(f in available_features for f in ['formability', 'surface-quality', 'shape', 'steel', 'thick', 'width', 'len']) else available_features[:min(2, len(available_features))]
+    available_features = X_train_scaled.columns.tolist()
+    default_features = ['formability', 'condition'] if all(f in available_features for f in ['formability', 'condition', 'surface-quality', 'shape', 'steel', 'thick', 'width', 'len']) else available_features[:min(2, len(available_features))]
     selected_features = st.multiselect("Выберите признаки для обучения:", available_features, default=default_features)
     st.markdown("---")
     st.header("Настройка значений для предсказания")
@@ -109,56 +95,29 @@ with st.sidebar:
     if selected_features:
         for feature in selected_features:
             if feature in orig_categorical_cols:
-                allowed = st.session_state['label_encoders'][feature].classes_
+                allowed = list(map(str, st.session_state['label_encoders'][feature].classes_))
                 prediction_data[feature] = st.selectbox(feature, options=allowed, index=0)
             else:
-                min_val = float(X_train[feature].min())
-                max_val = float(X_train[feature].max())
-                default_val = float(X_train[feature].mean())
+                min_val = float(X_train_scaled[feature].min())
+                max_val = float(X_train_scaled[feature].max())
+                default_val = float(X_train_scaled[feature].mean())
                 prediction_data[feature] = st.slider(feature, min_val, max_val, default_val)
     run_button = st.button("Предсказать")
-
-expander_data_explore = st.expander("Исследование данных", expanded=False)
-with expander_data_explore:
-    st.subheader("Предварительный просмотр данных")
-    st.dataframe(data_original.head())
-    st.subheader("Описательная статистика")
-    st.dataframe(data.describe())
-    st.subheader("Распределение классов")
-    binary_class_counts = data["binary_class"].value_counts()
-    fig_class_dist = px.bar(binary_class_counts, x=binary_class_counts.index, y=binary_class_counts.values,
-                            labels={'x': 'Класс', 'y': 'Количество'}, title="Распределение классов (Бинарная)")
-    st.plotly_chart(fig_class_dist)
-    st.subheader("Процент пропущенных значений (до обработки)")
-    missing_percentage = data_original.isna().sum() / len(data_original) * 100
-    missing_df = pd.DataFrame({'Признак': missing_percentage.index, 'Процент пропусков': missing_percentage.values})
-    missing_df = missing_df[missing_df['Процент пропусков'] > 0].sort_values(by='Процент пропусков', ascending=False)
-    if not missing_df.empty:
-        fig_missing = px.bar(missing_df, x='Признак', y='Процент пропусков',
-                             labels={'Процент пропусков': '% пропусков'},
-                             title="Процент пропущенных значений в признаках")
-        st.plotly_chart(fig_missing)
-    else:
-        st.info("Пропущенные значения отсутствуют или уже обработаны.")
-    if st.checkbox("Показать гистограммы признаков"):
-        st.subheader("Гистограммы признаков")
-        feature_hist_cols = st.columns(3)
-        for i, col in enumerate(X_train.columns):
-            with feature_hist_cols[i % 3]:
-                fig_hist, ax_hist = plt.subplots()
-                sns.histplot(data=X_train, x=col, kde=True, ax=ax_hist)
-                ax_hist.set_title(col, fontsize=10)
-                st.pyplot(fig_hist, use_container_width=True)
-
 if run_button or not st.session_state.get('models_trained', False):
     st.session_state['models_trained'] = True
     if len(selected_features) < 2:
         st.warning("Выберите как минимум два признака для обучения моделей.")
-        X_train_selected = X_train[default_features[:min(2, len(default_features))]]
-        X_test_selected = X_test[default_features[:min(2, len(default_features))]]
+        X_train_sel = X_train_scaled[default_features[:min(2, len(default_features))]]
+        X_test_sel = X_test_scaled[default_features[:min(2, len(default_features))]]
     else:
-        X_train_selected = X_train[selected_features]
-        X_test_selected = X_test[selected_features]
+        X_train_sel = X_train_scaled[selected_features]
+        X_test_sel = X_test_scaled[selected_features]
+    num_sel = [f for f in selected_features if f not in orig_categorical_cols]
+    if num_sel:
+        scaler_sel = StandardScaler()
+        X_train_sel[num_sel] = scaler_sel.fit_transform(X_train_sel[num_sel])
+        X_test_sel[num_sel] = scaler_sel.transform(X_test_sel[num_sel])
+        st.session_state['scaler_sel'] = scaler_sel
     if model_choice == "KNN":
         classifier = KNeighborsClassifier(**hyperparams)
     elif model_choice == "Logistic Regression":
@@ -167,20 +126,18 @@ if run_button or not st.session_state.get('models_trained', False):
         classifier = DecisionTreeClassifier(random_state=42, **hyperparams)
     else:
         classifier = LogisticRegression()
-    classifier.fit(X_train_selected, y_train)
-    y_pred = classifier.predict(X_test_selected)
-    y_prob = classifier.predict_proba(X_test_selected)[:, 1]
+    classifier.fit(X_train_sel, y_train)
+    y_pred = classifier.predict(X_test_sel)
+    y_prob = classifier.predict_proba(X_test_sel)[:, 1]
     st.session_state['classifier'] = classifier
-    st.session_state['X_train_selected'] = X_train_selected
-    st.session_state['y_train'] = y_train
-    st.session_state['X_test_selected'] = X_test_selected
+    st.session_state['X_train_sel'] = X_train_sel
+    st.session_state['X_test_sel'] = X_test_sel
     st.session_state['y_test'] = y_test
     st.session_state['y_pred'] = y_pred
     st.session_state['y_prob'] = y_prob
     st.session_state['model_choice'] = model_choice
     st.session_state['hyperparams'] = hyperparams
     st.session_state['selected_features'] = selected_features
-
 st.header("Оценка модели")
 if st.session_state.get('models_trained', False):
     st.subheader(f"Модель: {st.session_state['model_choice']}")
@@ -200,7 +157,7 @@ if st.session_state.get('models_trained', False):
         ax_cm.set_ylabel('Истинные')
         ax_cm.set_title('Матрица ошибок')
         st.pyplot(fig_cm)
-        fpr, tpr, thresholds = roc_curve(st.session_state['y_test'], st.session_state['y_prob'])
+        fpr, tpr, _ = roc_curve(st.session_state['y_test'], st.session_state['y_prob'])
         roc_auc_val = auc(fpr, tpr)
         fig_roc = px.area(x=fpr, y=tpr, title=f'ROC (AUC = {roc_auc_val:.2f})',
                           labels=dict(x='FPR', y='TPR'))
@@ -210,16 +167,15 @@ if st.session_state.get('models_trained', False):
     st.subheader("Отчет о классификации")
     st.text(classification_report(st.session_state['y_test'], st.session_state['y_pred']))
     st.header("Результаты на тестовом наборе")
-    results_df = pd.DataFrame(st.session_state['X_test_selected'].copy())
+    results_df = st.session_state['X_test_sel'].copy()
     results_df['Истинный класс'] = st.session_state['y_test'].values
     results_df['Предсказанный класс'] = st.session_state['y_pred']
     results_df['Вероятность класса 1'] = st.session_state['y_prob']
     st.dataframe(results_df)
-
 if run_button and st.session_state.get('models_trained', False) and prediction_data:
     single_prediction_df = pd.DataFrame([prediction_data])
     single_prediction_df = single_prediction_df[st.session_state['selected_features']].copy()
-    for col in single_prediction_df.columns:
+    for col in st.session_state['selected_features']:
         if col in orig_categorical_cols:
             single_prediction_df[col] = single_prediction_df[col].astype(str)
             le = st.session_state['label_encoders'][col]
@@ -228,14 +184,13 @@ if run_button and st.session_state.get('models_trained', False) and prediction_d
                     st.warning(f"Категория '{val}' для '{col}' не была видна. Выберите из {', '.join(le.classes_)}")
                     st.stop()
             single_prediction_df[col] = le.transform(single_prediction_df[col])
-    numerical_cols_selected = [c for c in st.session_state['selected_features'] if c not in orig_categorical_cols]
-    if numerical_cols_selected:
-        single_prediction_df[numerical_cols_selected] = scaler.transform(single_prediction_df[numerical_cols_selected])
+    num_sel = [f for f in st.session_state['selected_features'] if f not in orig_categorical_cols]
+    if num_sel:
+        single_prediction_df[num_sel] = st.session_state['scaler_sel'].transform(single_prediction_df[num_sel])
     single_prediction = st.session_state['classifier'].predict(single_prediction_df)
     single_prediction_proba = st.session_state['classifier'].predict_proba(single_prediction_df)[:, 1]
     st.subheader("Результат предсказания")
     st.write(f"Класс: {single_prediction[0]}")
     st.write(f"Вероятность класса 1: {single_prediction_proba[0]:.3f}")
-
 st.markdown("---")
 st.markdown("Разработано компанией Jamshed Corporation совместно с ZyplAI")
